@@ -3,7 +3,7 @@
 **Date:** 2026-10-18  
 **Status:** Approved  
 **Target:** DeepSeek Harness (DSH) Web / Desktop Plugin  
-**Package:** `dsh-quick-replies` (`@local/dsh-quick-replies`)  
+**Package:** `dsh-quick-replies`  
 **Repository Directory:** `/Users/medeiroshudson/Documents/Development/dsh-quick-replies`
 
 ---

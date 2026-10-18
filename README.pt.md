@@ -3,7 +3,7 @@ description: "Sugestões de respostas rápidas contextuais com atalhos de teclad
 kind: "package-reference"
 ---
 
-# @local/dsh-quick-replies
+# dsh-quick-replies
 
 [English](README.md) | Português
 
@@ -43,18 +43,28 @@ Ao ativar o bundle em seu perfil do DSH, o plugin monitora o ciclo de vida das m
 <a id="instalacao"></a>
 ### Instalação
 
-Instale diretamente no perfil ativo do seu DSH via CLI ou gerenciador de plugins:
+Como o pacote é distribuído diretamente via repositório, instale-o em seu perfil ativo do DSH via CLI apontando para o GitHub:
 
 ```bash
-dsh plugin install @local/dsh-quick-replies
+dsh plugin install github:medeiroshudson/dsh-quick-replies
 ```
 
-Ou adicione ao `package.json` do seu perfil e declare no `cordis.patch.yml`:
+Ou declare-o como dependência do GitHub no `package.json` do seu perfil e monte o registro no `cordis.patch.yml`:
 
+**`package.json`:**
+```json
+{
+  "dependencies": {
+    "dsh-quick-replies": "github:medeiroshudson/dsh-quick-replies"
+  }
+}
+```
+
+**`cordis.patch.yml`:**
 ```yaml
 - insert:
     - id: dsh-quick-replies
-      name: '@local/dsh-quick-replies'
+      name: 'dsh-quick-replies'
       config: {}
 ```
 

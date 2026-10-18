@@ -3,7 +3,7 @@ description: "Context-aware quick reply suggestions with keyboard shortcuts for 
 kind: "package-reference"
 ---
 
-# @local/dsh-quick-replies
+# dsh-quick-replies
 
 English | [Português](README.pt.md)
 
@@ -42,18 +42,28 @@ Mount this bundle into your DSH profile. Once active, completing an assistant re
 
 ### Installation
 
-Install the package directly into your current DSH profile via the CLI or Plugin Manager:
+Install the package directly from GitHub into your current DSH profile via the CLI:
 
 ```bash
-dsh plugin install @local/dsh-quick-replies
+dsh plugin install github:medeiroshudson/dsh-quick-replies
 ```
 
-Or add the bundle to your profile's `package.json` and declare it in `cordis.patch.yml`:
+Or declare it as a GitHub dependency in your profile's `package.json` and mount the row in `cordis.patch.yml`:
 
+**`package.json`:**
+```json
+{
+  "dependencies": {
+    "dsh-quick-replies": "github:medeiroshudson/dsh-quick-replies"
+  }
+}
+```
+
+**`cordis.patch.yml`:**
 ```yaml
 - insert:
     - id: dsh-quick-replies
-      name: '@local/dsh-quick-replies'
+      name: 'dsh-quick-replies'
       config: {}
 ```
 

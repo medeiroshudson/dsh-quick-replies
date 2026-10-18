@@ -4,7 +4,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-quick-replies',
+  id: 'dsh-quick-replies',
   factory(require) {
     const React = require('react');
     const h = React.createElement;

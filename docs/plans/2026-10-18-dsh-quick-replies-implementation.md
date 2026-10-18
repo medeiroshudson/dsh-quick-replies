@@ -40,17 +40,17 @@
 - Create: `README.md`
 
 **Interfaces:**
-- Consumes: Spec requirements for package name (`@local/dsh-quick-replies`), bundle patch, locales, and client manifest injection.
+- Consumes: Spec requirements for package name (`dsh-quick-replies`), bundle patch, locales, and client manifest injection.
 - Produces: Base files and metadata required by Cordis loader and DSH Plugin Manager.
 
 - [ ] **Step 1: Create `.gitignore`**
   Add `node_modules/`, `.DS_Store`, `coverage/`, and build artifacts.
 
 - [ ] **Step 2: Create `package.json`**
-  Declare `"name": "@local/dsh-quick-replies"`, `"version": "1.0.0"`, `"type": "module"`, exports (`.`, `./client`, `./locale/*.json`, `./icon`), `dsh.bundle.patch: "./cordis.patch.yml"`, `dsh.client: { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-conversation"] }`.
+  Declare `"name": "dsh-quick-replies"`, `"version": "1.0.0"`, `"type": "module"`, exports (`.`, `./client`, `./locale/*.json`, `./icon`), `dsh.bundle.patch: "./cordis.patch.yml"`, `dsh.client: { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-conversation"] }`.
 
 - [ ] **Step 3: Create `cordis.patch.yml`**
-  Insert entry `id: dsh-quick-replies`, `name: '@local/dsh-quick-replies'`.
+  Insert entry `id: dsh-quick-replies`, `name: 'dsh-quick-replies'`.
 
 - [ ] **Step 4: Create `locale/en.json` and `locale/pt.json`**
   Define `meta.title`, `meta.description`, and UI labels (`headerTitle`, `shortcutHint`, `emptyDraftHint`).
@@ -63,7 +63,7 @@
 
 - [ ] **Step 7: Verify package structure**
   Run: `node -e 'const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8")); console.log(pkg.name, pkg.dsh);'`
-  Expected: Outputs `@local/dsh-quick-replies` and valid `dsh` configuration object.
+  Expected: Outputs `dsh-quick-replies` and valid `dsh` configuration object.
 
 ---
 
@@ -161,7 +161,7 @@
   Implement helper and verify test passes.
 
 - [ ] **Step 4: Implement full `client.js` module**
-  - Uses `window.__ModuleLoader__.load({ id: '@local/dsh-quick-replies', factory: (require) => { ... } })`.
+  - Uses `window.__ModuleLoader__.load({ id: 'dsh-quick-replies', factory: (require) => { ... } })`.
   - Registers `conversation.input.dock` slot via `ctx.slots.inject`.
   - Renders responsive grid using `React.createElement`:
     - Renders `<button>` for each suggestion with `<kbd>⌥${index + 1}</kbd>`.

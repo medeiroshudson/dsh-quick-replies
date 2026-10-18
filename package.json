@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-quick-replies",
+  "name": "dsh-quick-replies",
   "version": "1.0.0",
   "description": "Context-aware quick reply suggestions for DeepSeek Harness",
   "private": true,
