@@ -84,5 +84,17 @@ describe('Summarizer Context Sanitizer & Parser', () => {
       assert.ok(userPrompt.includes('Todos os testes passaram com sucesso.'));
       assert.ok(userPrompt.includes('bash'));
     });
+
+    test('clamps huge assistant text to budget to prevent token explosion', () => {
+      const hugeOutput = 'X'.repeat(10000) + ' Conclusão importante com opções finais.';
+      const messages = [
+        { role: 'user', content: 'Y'.repeat(3000) },
+        { role: 'assistant', content: hugeOutput }
+      ];
+      const { userPrompt } = buildSummarizerPrompt(messages);
+      // userPrompt must be capped to safe budget
+      assert.ok(userPrompt.length < 4000, `Expected capped userPrompt length but got ${userPrompt.length}`);
+      assert.ok(userPrompt.includes('Conclusão importante com opções finais.'));
+    });
   });
 });

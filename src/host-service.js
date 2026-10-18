@@ -1,17 +1,18 @@
 /**
  * @file host-service.js
- * Host-side manager for in-flight generation, caching, and RPC.
+ * Host-side manager for in-flight generation, caching, and RPC/HTTP endpoints.
  */
 
 import { buildSummarizerPrompt, parseSummarizerResponse } from './summarizer.js';
 
 export class HostQuickReplyService {
   /**
-   * @param {{ llm?: any, sessionController?: any }} deps
+   * @param {{ llm?: any, sessionController?: any, agentDefaultModel?: any }} deps
    */
-  constructor({ llm, sessionController } = {}) {
+  constructor({ llm, sessionController, agentDefaultModel } = {}) {
     this.llm = llm;
     this.sessionController = sessionController;
+    this.agentDefaultModel = agentDefaultModel;
     /** @type {Map<string, string[]>} */
     this.cache = new Map();
     /** @type {Map<string, AbortController>} */
@@ -58,6 +59,15 @@ export class HostQuickReplyService {
   }
 
   /**
+   * Alias for RPC caller compatibility.
+   * @param {string} sessionId
+   * @returns {string[]}
+   */
+  getQuickReplies(sessionId) {
+    return this.getSuggestions(sessionId);
+  }
+
+  /**
    * Directly set suggestions for a session.
    * @param {string} sessionId
    * @param {string[]} suggestions
@@ -95,13 +105,35 @@ export class HostQuickReplyService {
   }
 
   /**
+   * Handle HTTP request for quick replies (e.g. GET /api/quick-replies?sessionId=...).
+   * @param {import('http').IncomingMessage} req
+   * @param {import('http').ServerResponse} res
+   */
+  handleHttpRequest(req, res) {
+    try {
+      const url = new URL(req.url || '/', 'http://localhost');
+      const sessionId = url.searchParams.get('sessionId') || '';
+      const suggestions = this.getSuggestions(sessionId);
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store'
+      });
+      res.end(JSON.stringify({ suggestions }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err?.message || 'Internal server error' }));
+    }
+  }
+
+  /**
    * Generate suggestions in the background using the active LLM.
    * @param {string} sessionId
    * @param {Array<{ role: string, content: any }>} messages
-   * @param {{ provider: string, model: string }} llmConfig
+   * @param {{ provider?: string, model?: string }} llmConfig
    * @returns {Promise<string[]>}
    */
-  async generateSuggestions(sessionId, messages, llmConfig) {
+  async generateSuggestions(sessionId, messages, llmConfig = {}) {
     if (!sessionId || !this.llm) {
       return [];
     }
@@ -118,9 +150,28 @@ export class HostQuickReplyService {
     try {
       const { system, userPrompt } = buildSummarizerPrompt(messages);
 
+      // Safe provider/model resolution with agentDefaultModel fallback
+      let provider = llmConfig?.provider;
+      let model = llmConfig?.model;
+
+      if (!provider || provider === 'default' || !model || model === 'default') {
+        if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
+          try {
+            const def = this.agentDefaultModel.currentSelection();
+            if (def?.provider) provider = def.provider;
+            if (def?.model) model = def.model;
+          } catch (_) {}
+        }
+      }
+
+      if (!provider || provider === 'default') {
+        provider = 'deepseek';
+        model = model || 'deepseek-chat';
+      }
+
       const generateOptions = {
-        provider: llmConfig?.provider || 'default',
-        model: llmConfig?.model || 'default',
+        provider,
+        model: model || 'default',
         system,
         messages: [{ role: 'user', content: userPrompt }],
         maxTokens: 60,

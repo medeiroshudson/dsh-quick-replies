@@ -10,21 +10,22 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     /**
-     * Map shortcut key to index
+     * Map shortcut key/code to index (0..2).
+     * Handles macOS Option-key dead characters as well as physical Digit1..Digit3.
      */
-    function getShortcutIndex(key) {
-      if (key === '1') return 0;
-      if (key === '2') return 1;
-      if (key === '3') return 2;
+    function getShortcutIndex(key, code) {
+      if (key === '1' || code === 'Digit1' || key === '¡' || key === '¹') return 0;
+      if (key === '2' || code === 'Digit2' || key === '™' || key === '²') return 1;
+      if (key === '3' || code === 'Digit3' || key === '£' || key === '³') return 2;
       return -1;
     }
 
     /**
-     * Determine if shortcut should trigger
+     * Determine if shortcut should trigger, checking both hook state and raw DOM value.
      */
     function shouldHandleShortcut(event, context) {
       if (!event || !event.altKey) return false;
-      const index = getShortcutIndex(event.key);
+      const index = getShortcutIndex(event.key, event.code);
       if (index === -1) return false;
       if (typeof context?.availableCount === 'number' && index >= context.availableCount) {
         return false;
@@ -32,6 +33,10 @@ window.__ModuleLoader__.load({
       if (context?.isComposerFocused) {
         const text = context?.draftText;
         if (typeof text === 'string' && text.trim().length > 0) {
+          return false;
+        }
+        const domVal = context?.domValue;
+        if (typeof domVal === 'string' && domVal.trim().length > 0) {
           return false;
         }
       }
@@ -47,8 +52,8 @@ window.__ModuleLoader__.load({
       const candidates = [];
 
       for (const line of lines) {
-        // Match numbered options like "1. Deploy", "2. Run tests" or "- Opção A", "- Opção B"
-        const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa)?\s*[A-C]?[:\-])\s*(.+)$/i);
+        // Match explicit numbered choices like "1. Deploy", "2. Run tests"
+        const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa|Option)\s*[A-C]?[:\-])\s*(.+)$/i);
         if (match && match[1]) {
           const item = match[1].replace(/[\*\_\`]/g, '').trim();
           if (item.length > 0 && item.length <= 48) {
@@ -65,7 +70,7 @@ window.__ModuleLoader__.load({
      * Quick Replies Component in conversation.input.dock
      */
     function QuickRepliesDock(props) {
-      const { sessionId, useSession, useInput, inputActions, useChat, host } = props;
+      const { sessionId, useSession, useInput, inputActions, useChat } = props;
 
       const isRunning = useSession ? useSession(s => s?.running ?? false) : false;
       const draft = useInput ? useInput(i => i?.draft ?? i?.text ?? '') : '';
@@ -73,7 +78,7 @@ window.__ModuleLoader__.load({
       const [suggestions, setSuggestions] = React.useState([]);
       const [submittingIdx, setSubmittingIdx] = React.useState(null);
 
-      // Inspect chat history when idle to update suggestions
+      // Inspect chat history to detect last assistant message
       const lastAssistantText = useChat ? useChat(snapshot => {
         if (!snapshot || !snapshot.nodes) return '';
         const nodes = Array.from(snapshot.nodes.values());
@@ -87,45 +92,54 @@ window.__ModuleLoader__.load({
         return '';
       }) : '';
 
-      // Update suggestions when turn completes or chat changes
+      // Fetch suggestions from Host HTTP endpoint with retry when turn completes
       React.useEffect(() => {
-        if (isRunning) {
+        if (isRunning || !sessionId) {
           setSuggestions([]);
           setSubmittingIdx(null);
           return;
         }
 
         let isMounted = true;
+        let retryTimer = null;
 
-        async function fetchSuggestions() {
-          // 1. Try host RPC if available
-          if (host && typeof host.call === 'function') {
-            try {
-              const res = await host.call('getQuickReplies', { sessionId });
-              if (isMounted && res && Array.isArray(res.suggestions)) {
-                setSuggestions(res.suggestions.slice(0, 3));
+        async function queryHost(attempt = 1) {
+          try {
+            const res = await fetch(`/api/quick-replies?sessionId=${encodeURIComponent(sessionId)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (isMounted && Array.isArray(data?.suggestions) && data.suggestions.length > 0) {
+                setSuggestions(data.suggestions.slice(0, 3));
                 return;
               }
-            } catch (_) {
-              // RPC failed or not implemented; fall back to text extraction
             }
+          } catch (_) {
+            // Host endpoint not reachable yet
           }
 
-          // 2. Fallback: contextual extraction from last assistant message
-          if (lastAssistantText) {
-            const fallback = extractFallbackSuggestions(lastAssistantText);
-            if (isMounted) {
-              setSuggestions(fallback);
+          // If still empty on first attempt, schedule one retry after background LLM finishes (~1.2s)
+          if (isMounted && attempt === 1) {
+            retryTimer = setTimeout(() => {
+              if (isMounted) queryHost(2);
+            }, 1200);
+          } else if (isMounted && attempt > 1) {
+            // Fall back to chat text extraction if host LLM yielded nothing
+            if (lastAssistantText) {
+              const fallback = extractFallbackSuggestions(lastAssistantText);
+              if (isMounted) {
+                setSuggestions(fallback);
+              }
             }
           }
         }
 
-        fetchSuggestions();
+        queryHost(1);
 
         return () => {
           isMounted = false;
+          if (retryTimer) clearTimeout(retryTimer);
         };
-      }, [isRunning, lastAssistantText, sessionId]);
+      }, [isRunning, sessionId, lastAssistantText]);
 
       // Dispatch prompt
       const handleSendPrompt = React.useCallback(async (text, index) => {
@@ -133,7 +147,6 @@ window.__ModuleLoader__.load({
         setSubmittingIdx(index);
 
         try {
-          // Standard DSH session prompt dispatch
           if (window.ctx?.remote?.session?.prompt) {
             await window.ctx.remote.session.prompt({
               requestId: `qr-${Date.now()}`,
@@ -164,16 +177,21 @@ window.__ModuleLoader__.load({
             activeElem.getAttribute('contenteditable') === 'true'
           );
 
+          const domValue = (activeElem && typeof activeElem.value === 'string')
+            ? activeElem.value
+            : (activeElem?.textContent || '');
+
           const draftText = typeof draft === 'string' ? draft : '';
 
           if (shouldHandleShortcut(e, {
             isComposerFocused,
             draftText,
+            domValue,
             availableCount: suggestions.length
           })) {
             e.preventDefault();
             e.stopPropagation();
-            const idx = getShortcutIndex(e.key);
+            const idx = getShortcutIndex(e.key, e.code);
             if (idx >= 0 && idx < suggestions.length) {
               handleSendPrompt(suggestions[idx], idx);
             }
@@ -194,6 +212,8 @@ window.__ModuleLoader__.load({
       // Render native DSH styled chips
       return h('div', {
         className: 'dsh-quick-replies-dock',
+        role: 'region',
+        'aria-label': 'Respostas Sugeridas',
         style: {
           padding: '8px 12px 10px 12px',
           marginBottom: '6px',
@@ -229,7 +249,8 @@ window.__ModuleLoader__.load({
             h('svg', {
               key: 'icon',
               width: 12, height: 12, viewBox: '0 0 24 24',
-              fill: 'none', stroke: 'currentColor', strokeWidth: 2.2
+              fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
+              'aria-hidden': 'true'
             }, h('path', { d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' })),
             'Respostas Sugeridas'
           ]),
@@ -252,6 +273,7 @@ window.__ModuleLoader__.load({
           return h('button', {
             key: `opt-${idx}`,
             type: 'button',
+            'aria-label': `Enviar sugestão: ${text}`,
             disabled: isSubmitting,
             onClick: () => handleSendPrompt(text, idx),
             style: {
@@ -319,6 +341,7 @@ window.__ModuleLoader__.load({
               key: 'arrow',
               width: 12, height: 12, viewBox: '0 0 24 24',
               fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
+              'aria-hidden': 'true',
               style: { opacity: 0.7, flexShrink: 0, marginLeft: '6px' }
             }, [
               h('line', { key: 'l', x1: 5, y1: 12, x2: 19, y2: 12 }),

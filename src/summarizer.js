@@ -23,14 +23,18 @@ Rules:
 - Actionable, imperative, or a natural short user reply.
 - No markdown, explanations, or commentary outside the JSON.`;
 
+const MAX_ASSISTANT_BUDGET = 2000;
+const MAX_USER_BUDGET = 500;
+
 /**
- * Extract clean string text from message content.
+ * Extract clean string text from message content with length bounds.
  * @param {string | Array<object>} content
+ * @param {number} maxBudget
  * @returns {string}
  */
-function extractTextAndTools(content) {
+function extractTextAndTools(content, maxBudget = MAX_ASSISTANT_BUDGET) {
   if (typeof content === 'string') {
-    return content;
+    return content.length > maxBudget ? '...' + content.slice(-maxBudget) : content;
   }
   if (!Array.isArray(content)) {
     return '';
@@ -51,6 +55,10 @@ function extractTextAndTools(content) {
   let result = texts.join('\n').trim();
   if (tools.length > 0) {
     result += `\n[Executed tools: ${tools.join(', ')}]`;
+  }
+
+  if (result.length > maxBudget) {
+    result = '...' + result.slice(-maxBudget);
   }
   return result;
 }
@@ -83,8 +91,8 @@ export function buildSummarizerPrompt(messages = []) {
     }
   }
 
-  const userText = lastUser ? extractTextAndTools(lastUser.content) : '';
-  const assistantText = lastAssistant ? extractTextAndTools(lastAssistant.content) : '';
+  const userText = lastUser ? extractTextAndTools(lastUser.content, MAX_USER_BUDGET) : '';
+  const assistantText = lastAssistant ? extractTextAndTools(lastAssistant.content, MAX_ASSISTANT_BUDGET) : '';
 
   const userPrompt = `User: ${userText}\n\nAssistant: ${assistantText}`;
 

@@ -4,23 +4,33 @@
  */
 
 /**
- * Maps a key character ('1', '2', '3') to a zero-based suggestion index.
- * @param {string} key
+ * Maps keyboard event key/code to a zero-based suggestion index (0..2).
+ * Handles macOS Option-key dead characters (e.g. '¡', '™', '£' on US, '¹', '²', '³' on ABNT2)
+ * as well as standard physical Digit1..Digit3 codes.
+ *
+ * @param {string} [key]
+ * @param {string} [code]
  * @returns {number} 0, 1, 2 or -1 if invalid
  */
-export function getShortcutIndex(key) {
-  if (key === '1') return 0;
-  if (key === '2') return 1;
-  if (key === '3') return 2;
+export function getShortcutIndex(key, code) {
+  if (key === '1' || code === 'Digit1' || key === '¡' || key === '¹') return 0;
+  if (key === '2' || code === 'Digit2' || key === '™' || key === '²') return 1;
+  if (key === '3' || code === 'Digit3' || key === '£' || key === '³') return 2;
   return -1;
 }
 
 /**
  * Determines whether a keyboard event should trigger a quick reply shortcut.
- * Ensures typing in the composer is uninterrupted if draft text exists.
+ * Ensures typing in the composer is uninterrupted if draft text exists,
+ * checking both hook state and raw DOM input value to prevent desync.
  *
- * @param {{ altKey?: boolean, key?: string }} event
- * @param {{ isComposerFocused?: boolean, draftText?: string | null, availableCount?: number }} context
+ * @param {{ altKey?: boolean, key?: string, code?: string }} event
+ * @param {{
+ *   isComposerFocused?: boolean,
+ *   draftText?: string | null,
+ *   domValue?: string | null,
+ *   availableCount?: number
+ * }} context
  * @returns {boolean}
  */
 export function shouldHandleShortcut(event, context = {}) {
@@ -28,7 +38,7 @@ export function shouldHandleShortcut(event, context = {}) {
     return false;
   }
 
-  const index = getShortcutIndex(event.key);
+  const index = getShortcutIndex(event.key, event.code);
   if (index === -1) {
     return false;
   }
@@ -40,10 +50,15 @@ export function shouldHandleShortcut(event, context = {}) {
     }
   }
 
-  // If composer input is actively focused, only allow shortcut if draft is empty
+  // If composer input is actively focused, verify both hook draft and raw DOM value
   if (context.isComposerFocused) {
     const text = context.draftText;
     if (typeof text === 'string' && text.trim().length > 0) {
+      return false;
+    }
+
+    const domVal = context.domValue;
+    if (typeof domVal === 'string' && domVal.trim().length > 0) {
       return false;
     }
   }

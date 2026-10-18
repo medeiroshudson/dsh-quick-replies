@@ -5,6 +5,7 @@ import { HostQuickReplyService } from '../src/host-service.js';
 describe('HostQuickReplyService', () => {
   let service;
   let mockLlm;
+  let mockDefaultModel;
 
   beforeEach(() => {
     mockLlm = {
@@ -16,7 +17,12 @@ describe('HostQuickReplyService', () => {
         yield { type: 'finish', reason: { kind: 'stop' } };
       }
     };
-    service = new HostQuickReplyService({ llm: mockLlm });
+    mockDefaultModel = {
+      currentSelection() {
+        return { provider: 'deepseek-active', model: 'deepseek-chat-v3' };
+      }
+    };
+    service = new HostQuickReplyService({ llm: mockLlm, agentDefaultModel: mockDefaultModel });
   });
 
   test('returns empty array when no suggestions cached for session', () => {
@@ -38,6 +44,55 @@ describe('HostQuickReplyService', () => {
     assert.deepEqual(suggestions, ['Deploy staging', 'Verificar logs']);
   });
 
+  test('falls back to agentDefaultModel when provider is default or missing', async () => {
+    let capturedOptions;
+    const trackingLlm = {
+      async *stream(options) {
+        capturedOptions = options;
+        yield { type: 'text-delta', text: '{"suggestions": ["Fallback test"]}' };
+      }
+    };
+
+    const s = new HostQuickReplyService({ llm: trackingLlm, agentDefaultModel: mockDefaultModel });
+    await s.generateSuggestions('session-fb', [{ role: 'assistant', content: 'Pronto' }], {
+      provider: 'default',
+      model: 'default'
+    });
+
+    assert.equal(capturedOptions.provider, 'deepseek-active');
+    assert.equal(capturedOptions.model, 'deepseek-chat-v3');
+    assert.deepEqual(s.getSuggestions('session-fb'), ['Fallback test']);
+  });
+
+  test('handles HTTP request route (/api/quick-replies)', async () => {
+    service.setSuggestions('session-http', ['Opção A', 'Opção B']);
+
+    let statusCode;
+    let headers = {};
+    let responseBody = '';
+
+    const req = {
+      url: '/api/quick-replies?sessionId=session-http',
+      method: 'GET'
+    };
+    const res = {
+      writeHead(code, h) {
+        statusCode = code;
+        headers = h;
+      },
+      end(data) {
+        responseBody = data;
+      }
+    };
+
+    service.handleHttpRequest(req, res);
+
+    assert.equal(statusCode, 200);
+    assert.equal(headers['Content-Type'], 'application/json');
+    const parsed = JSON.parse(responseBody);
+    assert.deepEqual(parsed.suggestions, ['Opção A', 'Opção B']);
+  });
+
   test('clears suggestions when session starts new turn', async () => {
     service.setSuggestions('session-1', ['Opção 1']);
     assert.equal(service.getSuggestions('session-1').length, 1);
@@ -53,20 +108,18 @@ describe('HostQuickReplyService', () => {
         options.signal?.addEventListener('abort', () => {
           aborted = true;
         });
-        // simulate delay
         await new Promise(r => setTimeout(r, 50));
         if (options.signal?.aborted) throw new Error('Aborted');
         yield { type: 'text-delta', text: '{"suggestions": ["Opção atrasada"]}' };
       }
     };
 
-    const s = new HostQuickReplyService({ llm: slowLlm });
+    const s = new HostQuickReplyService({ llm: slowLlm, agentDefaultModel: mockDefaultModel });
     const promise = s.generateSuggestions('session-2', [{ role: 'assistant', content: 'msg' }], {
       provider: 'test',
       model: 'test-model'
     });
 
-    // Immediately start new turn
     s.onTurnStarting('session-2');
     await promise;
 
@@ -81,7 +134,7 @@ describe('HostQuickReplyService', () => {
       }
     };
 
-    const s = new HostQuickReplyService({ llm: failingLlm });
+    const s = new HostQuickReplyService({ llm: failingLlm, agentDefaultModel: mockDefaultModel });
     await s.generateSuggestions('session-3', [{ role: 'assistant', content: 'msg' }], {
       provider: 'test',
       model: 'test-model'

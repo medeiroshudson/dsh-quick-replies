@@ -5,7 +5,7 @@
 
 import { HostQuickReplyService } from './src/host-service.js';
 
-export const inject = ['llm'];
+export const inject = ['llm', 'sessionController', 'agentDefaultModel', 'webServer'];
 
 /**
  * Apply the Host half of the bundle.
@@ -15,10 +15,26 @@ export const inject = ['llm'];
 export function apply(ctx, config) {
   const llm = ctx.get('llm');
   const sessionController = ctx.get('sessionController');
-  const service = new HostQuickReplyService({ llm, sessionController });
+  const agentDefaultModel = ctx.get('agentDefaultModel');
+  const webServer = ctx.get('webServer');
+
+  const service = new HostQuickReplyService({ llm, sessionController, agentDefaultModel });
 
   // Expose service on context for package RPC and inspection
   ctx.provide('quickReplies', service);
+
+  // Register HTTP endpoint for Client half retrieval (/api/quick-replies?sessionId=...)
+  if (webServer && typeof webServer.register === 'function') {
+    ctx.effect(() => {
+      return webServer.register({
+        kind: 'exact',
+        path: '/api/quick-replies',
+        handler(req, res) {
+          service.handleHttpRequest(req, res);
+        }
+      });
+    });
+  }
 
   // Listen to agent status transitions
   ctx.on('agent/status', async function ({ agent, status }) {
@@ -29,14 +45,12 @@ export function apply(ctx, config) {
       service.onTurnStarting(sessionId);
     } else if (status === 'idle') {
       try {
-        // Retrieve session history to extract context
         let messages = [];
-        let llmConfig = { provider: 'default', model: 'default' };
+        let llmConfig = {};
 
         if (sessionController && typeof sessionController.inspect === 'function') {
           const inspection = await sessionController.inspect(sessionId);
           if (inspection && Array.isArray(inspection.events)) {
-            // Find recent user/assistant messages and call config
             for (const ev of inspection.events) {
               if (ev.type === 'user/message' && ev.data) {
                 messages.push({ role: 'user', content: ev.data.content || ev.data.text || '' });
