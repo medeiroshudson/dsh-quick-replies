@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "title": "Quick Replies",
+    "description": "Context-aware quick reply suggestions with keyboard shortcuts above the composer."
+  },
+  "ui": {
+    "headerTitle": "Quick Replies",
+    "shortcutHint": "Press ⌥1, ⌥2 or ⌥3",
+    "emptyDraftHint": "Shortcuts active when composer draft is empty"
+  }
+}

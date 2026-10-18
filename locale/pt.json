@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "title": "Respostas Rápidas",
+    "description": "Sugestões de respostas rápidas contextuais com atalhos de teclado acima do composer."
+  },
+  "ui": {
+    "headerTitle": "Respostas Sugeridas",
+    "shortcutHint": "Pressione ⌥1, ⌥2 ou ⌥3",
+    "emptyDraftHint": "Atalhos ativos quando o campo de texto estiver vazio"
+  }
+}
