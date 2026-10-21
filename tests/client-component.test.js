@@ -79,6 +79,16 @@ describe('Client Shortcut Guard & Utilities', () => {
       assert.deepEqual(extractFallbackSuggestions(''), []);
       assert.deepEqual(extractFallbackSuggestions('Esta é uma resposta simples sem perguntas.'), []);
     });
+
+    test('ignores markdown headings and section numbers', () => {
+      const text = `O plugin está ativo!
+### 1. Como ele aparece na tela
+Explicação da tela.
+### 2. Formas de Uso e Interação
+#### Opção A: Pelo Teclado
+Sem tirar as mãos do teclado.`;
+      assert.deepEqual(extractFallbackSuggestions(text), []);
+    });
   });
 
   describe('getShortcutIndex', () => {

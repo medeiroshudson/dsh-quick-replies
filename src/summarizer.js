@@ -3,25 +3,34 @@
  * Context sanitizer and structured response parser for quick replies.
  */
 
-const SYSTEM_PROMPT = `You are an intent predictor for an interactive AI assistant.
-Analyze the assistant's last message and immediate user context.
-Determine if 0, 1, 2, or 3 quick next-step responses or decisions make sense for the user to reply with.
-If the response is a concluding statement, requires no action, or has no sensible next prompts, return an empty array [].
+const SYSTEM_PROMPT = `Você é um gerador de respostas rápidas contextuais (Quick Replies) para um assistente de IA.
+Sua função é prever exatamente o que o USUÁRIO HUMANO responderia em seguida para dar continuidade ao diálogo.
 
-Return strictly valid JSON matching this schema:
+DIRETRIZES FUNDAMENTAIS:
+1. SE A MENSAGEM DO ASSISTENTE NÃO PEDIR NADA:
+   Se o assistente apenas concluiu uma explicação, deu uma resposta puramente informativa, um agradecimento ou finalizou uma tarefa sem perguntas abertas e sem oferecer escolhas, retorne estritamente:
+   {"suggestions": []}
+
+2. QUANDO GERAR SUGESTÕES:
+   Apenas gere sugestões se o assistente fizer uma pergunta, propor opções, pedir confirmação ou se houver uma próxima ação óbvia e natural que o usuário queira executar (ex: "Executar testes", "Fazer commit", "Verificar logs", "Sim, pode prosseguir", "Explicar em detalhes").
+
+3. PERSPECTIVA DO USUÁRIO (PRIMEIRA PESSOA / IMPERATIVO):
+   Cada sugestão deve ser a fala do USUÁRIO (máximo 40 caracteres).
+   Exemplos corretos:
+   - "Sim, pode prosseguir"
+   - "Executar os testes agora"
+   - "Fazer deploy em staging"
+   - "Explicar o código criado"
+   - "Não, quero ajustar primeiro"
+   NUNCA use títulos de seções do assistente, cabeçalhos com "#" ou resumos passivos.
+
+Retorne APENAS um JSON válido no formato:
 {
   "suggestions": [
-    "Short actionable prompt 1",
-    "Short actionable prompt 2"
+    "Ação curta do usuário 1",
+    "Ação curta do usuário 2"
   ]
-}
-
-Rules:
-- Max 3 suggestions.
-- Each suggestion must be concise (under 45 characters).
-- Written in the user's language (matching the conversation).
-- Actionable, imperative, or a natural short user reply.
-- No markdown, explanations, or commentary outside the JSON.`;
+}`;
 
 const MAX_ASSISTANT_BUDGET = 2000;
 const MAX_USER_BUDGET = 500;

@@ -71,33 +71,43 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Extract fallback suggestions from last assistant message text
+     * Extract fallback suggestions from assistant text when host LLM is not yet ready or offline.
+     * Skips markdown headings and only accepts real prompt options or questions.
      */
     function extractFallbackSuggestions(text) {
       if (!text || typeof text !== 'string') return [];
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const cleanText = text.replace(/```[\s\S]*?```/g, '').trim();
+      const lines = cleanText.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) return [];
+
       const candidates = [];
 
       for (const line of lines) {
+        // Ignore markdown headings (###, ##, #)
+        if (line.startsWith('#')) continue;
+
+        // Match explicit numbered choices like "1. Deploy", "2) Run tests" or "- Opção A: Deploy"
         const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa|Option)\s*[A-C]?[:\-])\s*(.+)$/i);
         if (match && match[1]) {
           const item = match[1].replace(/[\*\_\`]/g, '').trim();
-          if (item.length > 0 && item.length <= 48) {
+          if (item.length > 2 && item.length <= 45 && !item.endsWith(':')) {
             candidates.push(item);
           }
         }
         if (candidates.length >= 3) break;
       }
 
-      if (candidates.length > 0) return candidates;
+      if (candidates.length >= 2) return candidates;
 
-      // Question patterns at the end of the response
+      // Question patterns strictly at the end of the response (must end with ?)
       const lastLine = lines[lines.length - 1] || '';
-      if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine)) {
-        return ['Sim, pode prosseguir', 'Não agora'];
-      }
-      if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
-        return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+      if (/\?$/.test(lastLine)) {
+        if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine) || /podemos/i.test(lastLine)) {
+          return ['Sim, pode prosseguir', 'Não agora'];
+        }
+        if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
+          return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+        }
       }
 
       return [];
@@ -142,7 +152,7 @@ window.__ModuleLoader__.load({
         let attempts = 0;
         const maxAttempts = 6;
 
-        // If we have assistant text, immediately set fallback suggestions to eliminate wait time!
+        // If we have assistant text, check if immediate fallback suggestions exist
         if (lastAssistantText) {
           const immediateFallback = extractFallbackSuggestions(lastAssistantText);
           if (immediateFallback.length > 0) {
@@ -185,24 +195,65 @@ window.__ModuleLoader__.load({
         setSubmittingIdx(index);
 
         try {
-          const remoteSession = clientCtx?.get('remote')?.session || clientCtx?.remote?.session || window.ctx?.remote?.session;
-          if (remoteSession && typeof remoteSession.prompt === 'function') {
-            await remoteSession.prompt({
-              requestId: `qr-${Date.now()}`,
-              sessionId,
-              mode: 'queue',
-              content: [{ type: 'text', text }]
-            });
-          } else if (inputActions && typeof inputActions.insertText === 'function') {
-            inputActions.insertText(text);
+          let sent = false;
+
+          // 1. Try ctx.sessions.scope(sessionId).conversation.send(text) (Native DSH composer send)
+          if (clientCtx?.sessions) {
+            try {
+              const actx = clientCtx.sessions.scope(sessionId);
+              const conv = actx?.get('conversation');
+              if (conv && typeof conv.send === 'function') {
+                await conv.send(text);
+                sent = true;
+              }
+            } catch (e) {
+              console.warn('[dsh-quick-replies] conversation.send failed:', e);
+            }
+
+            // 2. Try ctx.sessions.binding(sessionId).session.prompt
+            if (!sent) {
+              try {
+                const binding = clientCtx.sessions.binding(sessionId);
+                if (binding?.session && typeof binding.session.prompt === 'function') {
+                  const res = await binding.session.prompt([{ type: 'text', text }], 'queue');
+                  if (res?.ok !== false) sent = true;
+                }
+              } catch (e) {
+                console.warn('[dsh-quick-replies] session.prompt failed:', e);
+              }
+            }
           }
+
+          // 3. Try Remote session prompt
+          if (!sent) {
+            const remote = clientCtx?.get('remote') || clientCtx?.remote || window.ctx?.remote;
+            if (remote?.session?.prompt) {
+              await remote.session.prompt({
+                requestId: `qr-${Date.now()}`,
+                sessionId,
+                mode: 'queue',
+                content: [{ type: 'text', text }]
+              });
+              sent = true;
+            }
+          }
+
+          // 4. Fallback: if input has composer, insert text and trigger input
+          if (!sent) {
+            const composer = document.querySelector('[contenteditable="true"][role="textbox"]') || document.querySelector('textarea');
+            if (composer) {
+              composer.focus();
+              document.execCommand('insertText', false, text);
+            }
+          }
+
           setSuggestions([]);
         } catch (err) {
           console.error('[dsh-quick-replies] Prompt dispatch failed:', err);
         } finally {
           setSubmittingIdx(null);
         }
-      }, [sessionId, isRunning, inputActions]);
+      }, [sessionId, isRunning]);
 
       // Keyboard shortcut listener
       React.useEffect(() => {
@@ -210,15 +261,19 @@ window.__ModuleLoader__.load({
 
         function onKeyDown(e) {
           const activeElem = document.activeElement;
-          const isComposerFocused = activeElem && (
+          const isInputOrTextarea = activeElem && (
             activeElem.tagName === 'TEXTAREA' ||
-            activeElem.tagName === 'INPUT' ||
-            activeElem.getAttribute('contenteditable') === 'true'
+            activeElem.tagName === 'INPUT'
           );
+          const isContentEditable = activeElem && activeElem.getAttribute('contenteditable') === 'true';
+          const isComposerFocused = isInputOrTextarea || isContentEditable;
 
-          const domValue = (activeElem && typeof activeElem.value === 'string')
-            ? activeElem.value
-            : (activeElem?.textContent || '');
+          let domValue = '';
+          if (isInputOrTextarea && typeof activeElem.value === 'string') {
+            domValue = activeElem.value;
+          } else if (isContentEditable) {
+            domValue = (activeElem.innerText || '').replace(/[\r\n\t]/g, '').trim();
+          }
 
           const draftText = typeof draft === 'string' ? draft : '';
 
@@ -248,18 +303,20 @@ window.__ModuleLoader__.load({
         return null;
       }
 
-      // Render native DSH styled chips
+      // Render native DSH styled chips aligned exactly with the composer card width
       return h('div', {
         className: 'dsh-quick-replies-dock',
         role: 'region',
         'aria-label': 'Respostas Sugeridas',
         style: {
-          padding: '8px 12px 10px 12px',
-          marginBottom: '6px',
-          borderTop: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.08))',
+          boxSizing: 'border-box',
+          width: '100%',
+          maxWidth: 'var(--dsh-composer-card-max-width, 840px)',
+          margin: '0 auto 6px auto',
+          padding: '0',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '6px',
           fontFamily: 'inherit'
         }
       }, [
@@ -270,6 +327,7 @@ window.__ModuleLoader__.load({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            padding: '0 4px',
             fontSize: '11px',
             color: 'var(--dsw-alias-label-secondary, #9ca3af)',
             letterSpacing: '0.04em'
@@ -304,7 +362,7 @@ window.__ModuleLoader__.load({
           key: 'grid',
           style: {
             display: 'grid',
-            gridTemplateColumns: `repeat(${Math.min(suggestions.length, 3)}, 1fr)`,
+            gridTemplateColumns: suggestions.length === 1 ? '1fr' : (suggestions.length === 2 ? '1fr 1fr' : '1fr 1fr 1fr'),
             gap: '8px'
           }
         }, suggestions.map((text, idx) => {
@@ -319,25 +377,26 @@ window.__ModuleLoader__.load({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: 'var(--dsw-alias-bg-layer-1, #1a1e27)',
-              border: '1px solid var(--dsw-alias-border-l1, #2d3342)',
-              borderRadius: '7px',
-              padding: '7px 11px',
+              background: 'var(--dsw-alias-bg-layer-1, rgba(255,255,255,0.04))',
+              border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.08))',
+              borderRadius: 'var(--dsw-radius-md, 8px)',
+              padding: '8px 12px',
               color: 'var(--dsw-alias-label-primary, #f3f4f6)',
               fontSize: '12.5px',
               cursor: isSubmitting ? 'wait' : 'pointer',
               textAlign: 'left',
               transition: 'all 0.15s ease',
               opacity: isSubmitting ? 0.6 : 1,
-              outline: 'none'
+              outline: 'none',
+              boxShadow: 'var(--dsw-elevation-soft, 0 1px 3px rgba(0,0,0,0.1))'
             },
             onMouseOver: (e) => {
               e.currentTarget.style.borderColor = 'var(--dsw-alias-brand-primary, #3b82f6)';
-              e.currentTarget.style.background = 'var(--dsw-alias-bg-layer-2, #1f2533)';
+              e.currentTarget.style.background = 'var(--dsw-alias-bg-layer-2, rgba(255,255,255,0.08))';
             },
             onMouseOut: (e) => {
-              e.currentTarget.style.borderColor = 'var(--dsw-alias-border-l1, #2d3342)';
-              e.currentTarget.style.background = 'var(--dsw-alias-bg-layer-1, #1a1e27)';
+              e.currentTarget.style.borderColor = 'var(--dsw-alias-border-l1, rgba(255,255,255,0.08))';
+              e.currentTarget.style.background = 'var(--dsw-alias-bg-layer-1, rgba(255,255,255,0.04))';
             }
           }, [
             h('div', {
@@ -392,7 +451,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'sessions'],
       apply(ctx) {
         clientCtx = ctx;
         ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({

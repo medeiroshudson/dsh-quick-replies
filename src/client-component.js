@@ -41,30 +41,38 @@ export function extractTextFromNode(node) {
  */
 export function extractFallbackSuggestions(text) {
   if (!text || typeof text !== 'string') return [];
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const cleanText = text.replace(/```[\s\S]*?```/g, '').trim();
+  const lines = cleanText.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
   const candidates = [];
 
   for (const line of lines) {
-    // Match numbered options like "1. Deploy", "2) Run tests" or "- Opção A", "* Option B"
+    // Ignore markdown headings (###, ##, #)
+    if (line.startsWith('#')) continue;
+
+    // Match explicit numbered choices like "1. Deploy", "2) Run tests" or "- Opção A: Deploy"
     const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa|Option)\s*[A-C]?[:\-])\s*(.+)$/i);
     if (match && match[1]) {
       const item = match[1].replace(/[\*\_\`]/g, '').trim();
-      if (item.length > 0 && item.length <= 48) {
+      if (item.length > 2 && item.length <= 45 && !item.endsWith(':')) {
         candidates.push(item);
       }
     }
     if (candidates.length >= 3) break;
   }
 
-  if (candidates.length > 0) return candidates;
+  if (candidates.length >= 2) return candidates;
 
-  // Question patterns at the end of the response
+  // Question patterns strictly at the end of the response (must end with ?)
   const lastLine = lines[lines.length - 1] || '';
-  if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine)) {
-    return ['Sim, pode prosseguir', 'Não agora'];
-  }
-  if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
-    return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+  if (/\?$/.test(lastLine)) {
+    if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine) || /podemos/i.test(lastLine)) {
+      return ['Sim, pode prosseguir', 'Não agora'];
+    }
+    if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
+      return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+    }
   }
 
   return [];
