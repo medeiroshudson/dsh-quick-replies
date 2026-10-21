@@ -100,17 +100,32 @@ window.__ModuleLoader__.load({
       if (candidates.length >= 2) return candidates;
 
       // Question patterns strictly at the end of the response (must end with ?)
-      const lastLine = lines[lines.length - 1] || '';
-      if (/\?$/.test(lastLine)) {
-        if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine) || /podemos/i.test(lastLine)) {
+      const tail = lines.slice(-2).join(' ');
+      if (/\?/.test(tail)) {
+        if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
           return ['Sim, pode prosseguir', 'Não agora'];
         }
-        if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
+        if (/como deseja|como gostaria|como prefere|qual prefere/i.test(tail)) {
           return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+        }
+        if (/funciona|testar|deu certo/i.test(tail)) {
+          return ['Sim, funcionou!', 'Ainda não funcionou'];
         }
       }
 
-      return [];
+      // Contextual fallback based on content keywords
+      const lower = cleanText.toLowerCase();
+      if (lower.includes('corrigi') || lower.includes('ajustei') || lower.includes('consertado') || lower.includes('resolvido') || lower.includes('testar') || lower.includes('reinicie')) {
+        return ['Testei e funcionou!', 'Ainda não funcionou'];
+      }
+      if (lower.includes('git') || lower.includes('commit') || lower.includes('push') || lower.includes('repositório') || lower.includes('github')) {
+        return ['Fazer commit e push', 'Revisar alterações'];
+      }
+      if (lower.includes('criei') || lower.includes('implementei') || lower.includes('desenvolvi') || lower.includes('arquivo') || lower.includes('código')) {
+        return ['Executar os testes', 'Explicar implementação'];
+      }
+
+      return ['Prosseguir com o próximo passo', 'Explicar mais detalhes'];
     }
 
     /**
