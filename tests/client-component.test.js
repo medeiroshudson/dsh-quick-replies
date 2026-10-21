@@ -1,8 +1,86 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldHandleShortcut, getShortcutIndex } from '../src/client-component.js';
+import { shouldHandleShortcut, getShortcutIndex, extractTextFromNode, extractFallbackSuggestions } from '../src/client-component.js';
 
 describe('Client Shortcut Guard & Utilities', () => {
+  describe('extractTextFromNode', () => {
+    test('extracts text from node with data.blocks array', () => {
+      const node = {
+        kind: 'assistant-step',
+        data: {
+          blocks: [
+            { kind: 'reasoning', text: 'pensando...' },
+            { kind: 'text', text: 'Aqui está a resposta' }
+          ]
+        }
+      };
+      assert.equal(extractTextFromNode(node), 'Aqui está a resposta');
+    });
+
+    test('extracts text from node with data.content array', () => {
+      const node = {
+        kind: 'assistant',
+        data: {
+          content: [
+            { type: 'text', text: 'Texto de conteúdo' }
+          ]
+        }
+      };
+      assert.equal(extractTextFromNode(node), 'Texto de conteúdo');
+    });
+
+    test('extracts text from node with plain data.text', () => {
+      const node = { kind: 'turn-tail', data: { text: 'Texto direto' } };
+      assert.equal(extractTextFromNode(node), 'Texto direto');
+    });
+
+    test('returns empty string for empty or missing data', () => {
+      assert.equal(extractTextFromNode(null), '');
+      assert.equal(extractTextFromNode({}), '');
+      assert.equal(extractTextFromNode({ data: {} }), '');
+    });
+  });
+
+  describe('extractFallbackSuggestions', () => {
+    test('extracts numbered options', () => {
+      const text = 'Como deseja prosseguir?\n1. Rodar os testes\n2. Fazer deploy em staging\n3. Cancelar';
+      assert.deepEqual(extractFallbackSuggestions(text), [
+        'Rodar os testes',
+        'Fazer deploy em staging',
+        'Cancelar'
+      ]);
+    });
+
+    test('extracts bullet options', () => {
+      const text = 'Opções disponíveis:\n- Opção A: Iniciar build\n- Opção B: Limpar cache';
+      assert.deepEqual(extractFallbackSuggestions(text), [
+        'Iniciar build',
+        'Limpar cache'
+      ]);
+    });
+
+    test('extracts binary choices from closing question', () => {
+      const text = 'O arquivo foi criado com sucesso.\nDeseja que eu execute os testes agora?';
+      assert.deepEqual(extractFallbackSuggestions(text), [
+        'Sim, pode prosseguir',
+        'Não agora'
+      ]);
+    });
+
+    test('extracts next-step choices from "como gostaria de prosseguir"', () => {
+      const text = 'Arquivos alterados.\nComo gostaria de prosseguir?';
+      assert.deepEqual(extractFallbackSuggestions(text), [
+        'Prosseguir com o próximo passo',
+        'Detalhar mais informações'
+      ]);
+    });
+
+    test('returns empty array when text has no options or questions', () => {
+      assert.deepEqual(extractFallbackSuggestions(''), []);
+      assert.deepEqual(extractFallbackSuggestions('Esta é uma resposta simples sem perguntas.'), []);
+    });
+  });
+
   describe('getShortcutIndex', () => {
     test('maps 1, 2, 3 to indices 0, 1, 2 via key', () => {
       assert.equal(getShortcutIndex('1'), 0);

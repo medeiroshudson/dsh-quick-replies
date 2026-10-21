@@ -9,6 +9,33 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
 
+    let clientCtx = null;
+
+    /**
+     * Safely extract text string from DSH Chat node.
+     * DSH assistant-step nodes hold text in node.data.blocks array of { kind: 'text', text: string }
+     * or node.data.content array of { type: 'text', text: string }.
+     */
+    function extractTextFromNode(node) {
+      if (!node || !node.data) return '';
+      if (typeof node.data.text === 'string' && node.data.text) return node.data.text;
+      if (Array.isArray(node.data.blocks)) {
+        return node.data.blocks
+          .filter(b => b && (b.kind === 'text' || b.type === 'text') && typeof b.text === 'string')
+          .map(b => b.text)
+          .join('\n')
+          .trim();
+      }
+      if (Array.isArray(node.data.content)) {
+        return node.data.content
+          .filter(b => b && (b.kind === 'text' || b.type === 'text') && typeof b.text === 'string')
+          .map(b => b.text)
+          .join('\n')
+          .trim();
+      }
+      return '';
+    }
+
     /**
      * Map shortcut key/code to index (0..2).
      * Handles macOS Option-key dead characters as well as physical Digit1..Digit3.
@@ -52,7 +79,6 @@ window.__ModuleLoader__.load({
       const candidates = [];
 
       for (const line of lines) {
-        // Match explicit numbered choices like "1. Deploy", "2. Run tests"
         const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa|Option)\s*[A-C]?[:\-])\s*(.+)$/i);
         if (match && match[1]) {
           const item = match[1].replace(/[\*\_\`]/g, '').trim();
@@ -63,7 +89,18 @@ window.__ModuleLoader__.load({
         if (candidates.length >= 3) break;
       }
 
-      return candidates;
+      if (candidates.length > 0) return candidates;
+
+      // Question patterns at the end of the response
+      const lastLine = lines[lines.length - 1] || '';
+      if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine)) {
+        return ['Sim, pode prosseguir', 'Não agora'];
+      }
+      if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
+        return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+      }
+
+      return [];
     }
 
     /**
@@ -84,15 +121,15 @@ window.__ModuleLoader__.load({
         const nodes = Array.from(snapshot.nodes.values());
         for (let i = nodes.length - 1; i >= 0; i--) {
           const node = nodes[i];
-          if (node.kind === 'assistant-step' || node.kind === 'turn-tail') {
-            const text = node.data?.text || node.data?.root?.text;
-            if (typeof text === 'string') return text;
+          if (node.kind === 'assistant-step' || node.kind === 'assistant' || node.kind === 'turn-tail') {
+            const text = extractTextFromNode(node);
+            if (text) return text;
           }
         }
         return '';
       }) : '';
 
-      // Fetch suggestions from Host HTTP endpoint with retry when turn completes
+      // Fetch suggestions from Host HTTP endpoint with immediate fallback and active polling
       React.useEffect(() => {
         if (isRunning || !sessionId) {
           setSuggestions([]);
@@ -102,8 +139,19 @@ window.__ModuleLoader__.load({
 
         let isMounted = true;
         let retryTimer = null;
+        let attempts = 0;
+        const maxAttempts = 6;
 
-        async function queryHost(attempt = 1) {
+        // If we have assistant text, immediately set fallback suggestions to eliminate wait time!
+        if (lastAssistantText) {
+          const immediateFallback = extractFallbackSuggestions(lastAssistantText);
+          if (immediateFallback.length > 0) {
+            setSuggestions(immediateFallback);
+          }
+        }
+
+        async function queryHost() {
+          attempts++;
           try {
             const res = await fetch(`/api/quick-replies?sessionId=${encodeURIComponent(sessionId)}`);
             if (res.ok) {
@@ -117,23 +165,13 @@ window.__ModuleLoader__.load({
             // Host endpoint not reachable yet
           }
 
-          // If still empty on first attempt, schedule one retry after background LLM finishes (~1.2s)
-          if (isMounted && attempt === 1) {
-            retryTimer = setTimeout(() => {
-              if (isMounted) queryHost(2);
-            }, 1200);
-          } else if (isMounted && attempt > 1) {
-            // Fall back to chat text extraction if host LLM yielded nothing
-            if (lastAssistantText) {
-              const fallback = extractFallbackSuggestions(lastAssistantText);
-              if (isMounted) {
-                setSuggestions(fallback);
-              }
-            }
+          if (isMounted && attempts < maxAttempts) {
+            retryTimer = setTimeout(queryHost, 500);
           }
         }
 
-        queryHost(1);
+        // Start querying host in background for tailored LLM suggestions
+        queryHost();
 
         return () => {
           isMounted = false;
@@ -147,8 +185,9 @@ window.__ModuleLoader__.load({
         setSubmittingIdx(index);
 
         try {
-          if (window.ctx?.remote?.session?.prompt) {
-            await window.ctx.remote.session.prompt({
+          const remoteSession = clientCtx?.get('remote')?.session || clientCtx?.remote?.session || window.ctx?.remote?.session;
+          if (remoteSession && typeof remoteSession.prompt === 'function') {
+            await remoteSession.prompt({
               requestId: `qr-${Date.now()}`,
               sessionId,
               mode: 'queue',
@@ -355,6 +394,7 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
+        clientCtx = ctx;
         ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
           name: 'conversation.input.dock',
           id: 'dsh-quick-replies',

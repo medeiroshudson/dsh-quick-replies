@@ -84,10 +84,26 @@ export function buildSummarizerPrompt(messages = []) {
     const msg = messages[i];
     if (!msg) continue;
     if (!lastAssistant && msg.role === 'assistant') {
-      lastAssistant = msg;
+      const text = extractTextAndTools(msg.content, MAX_ASSISTANT_BUDGET);
+      if (text) {
+        lastAssistant = msg;
+      }
     } else if (lastAssistant && !lastUser && msg.role === 'user') {
-      lastUser = msg;
-      break;
+      // Check if message is a non-human metadata injection
+      if (msg.source && msg.source.kind && msg.source.kind !== 'user') {
+        continue;
+      }
+      const text = extractTextAndTools(msg.content, MAX_USER_BUDGET);
+      if (
+        text &&
+        !text.startsWith('<system-reminder>') &&
+        !text.startsWith('<openviking-context>') &&
+        !text.startsWith('Time sampled while') &&
+        !text.startsWith('[model changed:')
+      ) {
+        lastUser = msg;
+        break;
+      }
     }
   }
 

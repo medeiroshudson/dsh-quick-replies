@@ -4,6 +4,73 @@
  */
 
 /**
+ * Safely extract text string from DSH Chat node.
+ * DSH assistant-step nodes hold text in node.data.blocks array of { kind: 'text', text: string }
+ * or node.data.content array of { type: 'text', text: string }.
+ * @param {any} node
+ * @returns {string}
+ */
+export function extractTextFromNode(node) {
+  if (!node || !node.data) return '';
+  if (typeof node.data.text === 'string' && node.data.text) return node.data.text;
+  if (Array.isArray(node.data.blocks)) {
+    return node.data.blocks
+      .filter(b => b && (b.kind === 'text' || b.type === 'text') && typeof b.text === 'string')
+      .map(b => b.text)
+      .join('\n')
+      .trim();
+  }
+  if (Array.isArray(node.data.content)) {
+    return node.data.content
+      .filter(b => b && (b.kind === 'text' || b.type === 'text') && typeof b.text === 'string')
+      .map(b => b.text)
+      .join('\n')
+      .trim();
+  }
+  return '';
+}
+
+/**
+ * Extract contextual suggestions from assistant text when host LLM is not yet ready or offline.
+ * Supports:
+ * - Numbered options ("1. ...", "2. ...")
+ * - Bullet list options ("- Opção A", "* Opção B")
+ * - Decision questions ("Deseja que eu...?", "Quer que eu...?", "Como gostaria de prosseguir?")
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function extractFallbackSuggestions(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const candidates = [];
+
+  for (const line of lines) {
+    // Match numbered options like "1. Deploy", "2) Run tests" or "- Opção A", "* Option B"
+    const match = line.match(/^(?:[1-3][\.\)]|[\*\-]\s+(?:Opção|Alternativa|Option)\s*[A-C]?[:\-])\s*(.+)$/i);
+    if (match && match[1]) {
+      const item = match[1].replace(/[\*\_\`]/g, '').trim();
+      if (item.length > 0 && item.length <= 48) {
+        candidates.push(item);
+      }
+    }
+    if (candidates.length >= 3) break;
+  }
+
+  if (candidates.length > 0) return candidates;
+
+  // Question patterns at the end of the response
+  const lastLine = lines[lines.length - 1] || '';
+  if (/deseja que eu/i.test(lastLine) || /quer que eu/i.test(lastLine) || /posso avançar/i.test(lastLine)) {
+    return ['Sim, pode prosseguir', 'Não agora'];
+  }
+  if (/como deseja/i.test(lastLine) || /como gostaria de prosseguir/i.test(lastLine) || /como prefere/i.test(lastLine)) {
+    return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+  }
+
+  return [];
+}
+
+/**
  * Maps keyboard event key/code to a zero-based suggestion index (0..2).
  * Handles macOS Option-key dead characters (e.g. '¡', '™', '£' on US, '¹', '²', '³' on ABNT2)
  * as well as standard physical Digit1..Digit3 codes.

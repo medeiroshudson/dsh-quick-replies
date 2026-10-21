@@ -96,5 +96,18 @@ describe('Summarizer Context Sanitizer & Parser', () => {
       assert.ok(userPrompt.length < 4000, `Expected capped userPrompt length but got ${userPrompt.length}`);
       assert.ok(userPrompt.includes('Conclusão importante com opções finais.'));
     });
+
+    test('skips metadata/system messages when locating user prompt', () => {
+      const messages = [
+        { role: 'user', content: 'Pergunta real do usuário', source: { kind: 'user' } },
+        { role: 'user', content: 'Time sampled while preparing turn...', source: { kind: 'time-context' } },
+        { role: 'user', content: '[model changed: a -> b]', source: { kind: 'model-selection' } },
+        { role: 'assistant', content: 'Resposta do assistente com opções' }
+      ];
+      const { userPrompt } = buildSummarizerPrompt(messages);
+      assert.ok(userPrompt.includes('Pergunta real do usuário'));
+      assert.ok(!userPrompt.includes('Time sampled'));
+      assert.ok(!userPrompt.includes('model changed'));
+    });
   });
 });

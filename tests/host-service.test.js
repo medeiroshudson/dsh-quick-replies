@@ -64,6 +64,28 @@ describe('HostQuickReplyService', () => {
     assert.deepEqual(s.getSuggestions('session-fb'), ['Fallback test']);
   });
 
+  test('retries with agentDefaultModel if primary provider stream fails', async () => {
+    let attempts = 0;
+    const failingFirstLlm = {
+      async *stream(options) {
+        attempts++;
+        if (options.provider === 'broken-provider') {
+          throw new Error('401 Unauthorized');
+        }
+        yield { type: 'text-delta', text: '{"suggestions": ["Recuperado com sucesso"]}' };
+      }
+    };
+
+    const s = new HostQuickReplyService({ llm: failingFirstLlm, agentDefaultModel: mockDefaultModel });
+    await s.generateSuggestions('session-retry', [{ role: 'assistant', content: 'Pronto' }], {
+      provider: 'broken-provider',
+      model: 'broken-model'
+    });
+
+    assert.equal(attempts, 2);
+    assert.deepEqual(s.getSuggestions('session-retry'), ['Recuperado com sucesso']);
+  });
+
   test('handles HTTP request route (/api/quick-replies)', async () => {
     service.setSuggestions('session-http', ['Opção A', 'Opção B']);
 

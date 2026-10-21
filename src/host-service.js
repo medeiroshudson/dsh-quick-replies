@@ -174,20 +174,43 @@ export class HostQuickReplyService {
         model: model || 'default',
         system,
         messages: [{ role: 'user', content: userPrompt }],
-        maxTokens: 60,
+        maxTokens: 256,
+        reasoningEffort: 'low',
         temperature: 0.3,
         signal: controller.signal
       };
 
       let fullText = '';
-      const stream = this.llm.stream(generateOptions);
+      try {
+        const stream = this.llm.stream(generateOptions);
 
-      for await (const chunk of stream) {
-        if (controller.signal.aborted) {
-          return [];
+        for await (const chunk of stream) {
+          if (controller.signal.aborted) {
+            return [];
+          }
+          if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+            fullText += chunk.text;
+          }
         }
-        if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
-          fullText += chunk.text;
+      } catch (streamErr) {
+        // If streaming failed with current provider, try fallback to agentDefaultModel
+        let fallbackDef = null;
+        if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
+          try { fallbackDef = this.agentDefaultModel.currentSelection(); } catch (_) {}
+        }
+        if (!controller.signal.aborted && fallbackDef?.provider && fallbackDef.provider !== provider) {
+          generateOptions.provider = fallbackDef.provider;
+          generateOptions.model = fallbackDef.model || 'default';
+          fullText = '';
+          const retryStream = this.llm.stream(generateOptions);
+          for await (const chunk of retryStream) {
+            if (controller.signal.aborted) return [];
+            if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+              fullText += chunk.text;
+            }
+          }
+        } else {
+          throw streamErr;
         }
       }
 
