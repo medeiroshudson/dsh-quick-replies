@@ -115,6 +115,25 @@ describe('HostQuickReplyService', () => {
     assert.deepEqual(parsed.suggestions, ['Opção A', 'Opção B']);
   });
 
+  test('calls onDemandTrigger when cache is empty on HTTP request', () => {
+    let triggeredSessionId = null;
+    service.setOnDemandTrigger((id) => {
+      triggeredSessionId = id;
+    });
+
+    const req = {
+      url: '/api/quick-replies?sessionId=session-empty-cache',
+      method: 'GET'
+    };
+    const res = {
+      writeHead() {},
+      end() {}
+    };
+
+    service.handleHttpRequest(req, res);
+    assert.equal(triggeredSessionId, 'session-empty-cache');
+  });
+
   test('clears suggestions when session starts new turn', async () => {
     service.setSuggestions('session-1', ['Opção 1']);
     assert.equal(service.getSuggestions('session-1').length, 1);

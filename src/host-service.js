@@ -19,6 +19,16 @@ export class HostQuickReplyService {
     this.controllers = new Map();
     /** @type {Set<(sessionId: string, suggestions: string[]) => void>} */
     this.changeListeners = new Set();
+    /** @type {((sessionId: string) => void) | null} */
+    this.onDemandTrigger = null;
+  }
+
+  /**
+   * Set callback to trigger suggestion generation when cache is empty on query.
+   * @param {(sessionId: string) => void} fn
+   */
+  setOnDemandTrigger(fn) {
+    this.onDemandTrigger = fn;
   }
 
   /**
@@ -115,6 +125,12 @@ export class HostQuickReplyService {
       const sessionId = url.searchParams.get('sessionId') || '';
       const suggestions = this.getSuggestions(sessionId);
 
+      if (suggestions.length === 0 && sessionId && typeof this.onDemandTrigger === 'function') {
+        try {
+          this.onDemandTrigger(sessionId);
+        } catch (_) {}
+      }
+
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store'
@@ -174,7 +190,7 @@ export class HostQuickReplyService {
         model: model || 'default',
         system,
         messages: [{ role: 'user', content: userPrompt }],
-        maxTokens: 256,
+        maxTokens: 512,
         reasoningEffort: 'low',
         temperature: 0.3,
         signal: controller.signal

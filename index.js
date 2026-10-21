@@ -26,6 +26,9 @@ export function apply(ctx, config) {
   // Register HTTP endpoint for Client half retrieval (/api/quick-replies?sessionId=...)
   if (webServer && typeof webServer.register === 'function') {
     ctx.effect(() => {
+      service.setOnDemandTrigger((id) => {
+        triggerForSession(id);
+      });
       return webServer.register({
         kind: 'exact',
         path: '/api/quick-replies',
