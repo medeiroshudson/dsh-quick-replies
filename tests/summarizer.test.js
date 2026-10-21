@@ -62,7 +62,7 @@ describe('Summarizer Context Sanitizer & Parser', () => {
         { role: 'assistant', content: 'Criei a função quickSort. Deseja adicionar testes unitários?' }
       ];
       const { system, userPrompt } = buildSummarizerPrompt(messages);
-      assert.ok(system.includes('respostas rápidas') || system.includes('Quick Replies'));
+      assert.ok(system.includes('intent predictor') || system.includes('quick-reply generator'));
       assert.ok(userPrompt.includes('quickSort'));
       assert.ok(userPrompt.includes('ordenação'));
     });

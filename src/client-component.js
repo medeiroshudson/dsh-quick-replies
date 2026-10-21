@@ -78,19 +78,7 @@ export function extractFallbackSuggestions(text) {
     }
   }
 
-  // Contextual fallback based on content keywords
-  const lower = cleanText.toLowerCase();
-  if (lower.includes('corrigi') || lower.includes('ajustei') || lower.includes('consertado') || lower.includes('resolvido') || lower.includes('testar') || lower.includes('reinicie')) {
-    return ['Testei e funcionou!', 'Ainda não funcionou'];
-  }
-  if (lower.includes('git') || lower.includes('commit') || lower.includes('push') || lower.includes('repositório') || lower.includes('github')) {
-    return ['Fazer commit e push', 'Revisar alterações'];
-  }
-  if (lower.includes('criei') || lower.includes('implementei') || lower.includes('desenvolvi') || lower.includes('arquivo') || lower.includes('código')) {
-    return ['Executar os testes', 'Explicar implementação'];
-  }
-
-  return ['Prosseguir com o próximo passo', 'Explicar mais detalhes'];
+  return [];
 }
 
 /**

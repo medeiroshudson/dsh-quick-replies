@@ -99,34 +99,22 @@ window.__ModuleLoader__.load({
 
       if (candidates.length >= 2) return candidates;
 
-      // Question patterns strictly at the end of the response (must end with ?)
-      const tail = lines.slice(-2).join(' ');
-      if (/\?/.test(tail)) {
-        if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
-          return ['Sim, pode prosseguir', 'Não agora'];
-        }
-        if (/como deseja|como gostaria|como prefere|qual prefere/i.test(tail)) {
-          return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
-        }
-        if (/funciona|testar|deu certo/i.test(tail)) {
-          return ['Sim, funcionou!', 'Ainda não funcionou'];
-        }
-      }
-
-      // Contextual fallback based on content keywords
-      const lower = cleanText.toLowerCase();
-      if (lower.includes('corrigi') || lower.includes('ajustei') || lower.includes('consertado') || lower.includes('resolvido') || lower.includes('testar') || lower.includes('reinicie')) {
-        return ['Testei e funcionou!', 'Ainda não funcionou'];
-      }
-      if (lower.includes('git') || lower.includes('commit') || lower.includes('push') || lower.includes('repositório') || lower.includes('github')) {
-        return ['Fazer commit e push', 'Revisar alterações'];
-      }
-      if (lower.includes('criei') || lower.includes('implementei') || lower.includes('desenvolvi') || lower.includes('arquivo') || lower.includes('código')) {
-        return ['Executar os testes', 'Explicar implementação'];
-      }
-
-      return ['Prosseguir com o próximo passo', 'Explicar mais detalhes'];
+  // Question patterns strictly at the end of the response (must end with ?)
+  const tail = lines.slice(-2).join(' ');
+  if (/\?/.test(tail)) {
+    if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
+      return ['Sim, pode prosseguir', 'Não agora'];
     }
+    if (/como deseja|como gostaria|como prefere|qual prefere/i.test(tail)) {
+      return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+    }
+    if (/funciona|testar|deu certo/i.test(tail)) {
+      return ['Sim, funcionou!', 'Ainda não funcionou'];
+    }
+  }
+
+  return [];
+}
 
     /**
      * Quick Replies Component in conversation.input.dock

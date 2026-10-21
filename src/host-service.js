@@ -17,6 +17,8 @@ export class HostQuickReplyService {
     this.cache = new Map();
     /** @type {Map<string, AbortController>} */
     this.controllers = new Map();
+    /** @type {Map<string, Promise<string[]>>} */
+    this.inFlight = new Map();
     /** @type {Set<(sessionId: string, suggestions: string[]) => void>} */
     this.changeListeners = new Set();
     /** @type {((sessionId: string) => void) | null} */
@@ -95,6 +97,7 @@ export class HostQuickReplyService {
    */
   clearSuggestions(sessionId) {
     if (!sessionId) return;
+    this.inFlight.delete(sessionId);
     const controller = this.controllers.get(sessionId);
     if (controller) {
       controller.abort();
@@ -119,15 +122,27 @@ export class HostQuickReplyService {
    * @param {import('http').IncomingMessage} req
    * @param {import('http').ServerResponse} res
    */
-  handleHttpRequest(req, res) {
+  async handleHttpRequest(req, res) {
     try {
       const url = new URL(req.url || '/', 'http://localhost');
       const sessionId = url.searchParams.get('sessionId') || '';
-      const suggestions = this.getSuggestions(sessionId);
+      let suggestions = this.getSuggestions(sessionId);
 
-      if (suggestions.length === 0 && sessionId && typeof this.onDemandTrigger === 'function') {
+      if (suggestions.length === 0 && sessionId && typeof this.onDemandTrigger === 'function' && !this.inFlight.has(sessionId)) {
         try {
           this.onDemandTrigger(sessionId);
+        } catch (_) {}
+      }
+
+      // If generation is in flight, await it up to 2500ms
+      const task = this.inFlight.get(sessionId);
+      if (task) {
+        try {
+          await Promise.race([
+            task,
+            new Promise(r => setTimeout(r, 2500))
+          ]);
+          suggestions = this.getSuggestions(sessionId);
         } catch (_) {}
       }
 
@@ -163,92 +178,100 @@ export class HostQuickReplyService {
     const controller = new AbortController();
     this.controllers.set(sessionId, controller);
 
-    try {
-      const { system, userPrompt } = buildSummarizerPrompt(messages);
-
-      // Safe provider/model resolution with agentDefaultModel fallback
-      let provider = llmConfig?.provider;
-      let model = llmConfig?.model;
-
-      if (!provider || provider === 'default' || !model || model === 'default') {
-        if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
-          try {
-            const def = this.agentDefaultModel.currentSelection();
-            if (def?.provider) provider = def.provider;
-            if (def?.model) model = def.model;
-          } catch (_) {}
-        }
-      }
-
-      if (!provider || provider === 'default') {
-        provider = 'deepseek';
-        model = model || 'deepseek-chat';
-      }
-
-      const generateOptions = {
-        provider,
-        model: model || 'default',
-        system,
-        messages: [{ role: 'user', content: userPrompt }],
-        maxTokens: 512,
-        reasoningEffort: 'low',
-        temperature: 0.3,
-        signal: controller.signal
-      };
-
-      let fullText = '';
+    const task = (async () => {
       try {
-        const stream = this.llm.stream(generateOptions);
+        const { system, userPrompt } = buildSummarizerPrompt(messages);
 
-        for await (const chunk of stream) {
-          if (controller.signal.aborted) {
-            return [];
-          }
-          if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
-            fullText += chunk.text;
+        // Safe provider/model resolution with agentDefaultModel fallback
+        let provider = llmConfig?.provider;
+        let model = llmConfig?.model;
+
+        if (!provider || provider === 'default' || !model || model === 'default') {
+          if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
+            try {
+              const def = this.agentDefaultModel.currentSelection();
+              if (def?.provider) provider = def.provider;
+              if (def?.model) model = def.model;
+            } catch (_) {}
           }
         }
-      } catch (streamErr) {
-        // If streaming failed with current provider, try fallback to agentDefaultModel
-        let fallbackDef = null;
-        if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
-          try { fallbackDef = this.agentDefaultModel.currentSelection(); } catch (_) {}
+
+        if (!provider || provider === 'default') {
+          provider = 'deepseek';
+          model = model || 'deepseek-chat';
         }
-        if (!controller.signal.aborted && fallbackDef?.provider && fallbackDef.provider !== provider) {
-          generateOptions.provider = fallbackDef.provider;
-          generateOptions.model = fallbackDef.model || 'default';
-          fullText = '';
-          const retryStream = this.llm.stream(generateOptions);
-          for await (const chunk of retryStream) {
-            if (controller.signal.aborted) return [];
+
+        const generateOptions = {
+          provider,
+          model: model || 'default',
+          system,
+          messages: [{ role: 'user', content: userPrompt }],
+          maxTokens: 512,
+          reasoningEffort: 'low',
+          temperature: 0.3,
+          signal: controller.signal
+        };
+
+        let fullText = '';
+        try {
+          const stream = this.llm.stream(generateOptions);
+
+          for await (const chunk of stream) {
+            if (controller.signal.aborted) {
+              return [];
+            }
             if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
               fullText += chunk.text;
             }
           }
-        } else {
-          throw streamErr;
+        } catch (streamErr) {
+          // If streaming failed with current provider, try fallback to agentDefaultModel
+          let fallbackDef = null;
+          if (this.agentDefaultModel && typeof this.agentDefaultModel.currentSelection === 'function') {
+            try { fallbackDef = this.agentDefaultModel.currentSelection(); } catch (_) {}
+          }
+          if (!controller.signal.aborted && fallbackDef?.provider && fallbackDef.provider !== provider) {
+            generateOptions.provider = fallbackDef.provider;
+            generateOptions.model = fallbackDef.model || 'default';
+            fullText = '';
+            const retryStream = this.llm.stream(generateOptions);
+            for await (const chunk of retryStream) {
+              if (controller.signal.aborted) return [];
+              if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+                fullText += chunk.text;
+              }
+            }
+          } else {
+            throw streamErr;
+          }
+        }
+
+        if (controller.signal.aborted) {
+          return [];
+        }
+
+        const suggestions = parseSummarizerResponse(fullText);
+        this.cache.set(sessionId, suggestions);
+        this.notify(sessionId, suggestions);
+        return suggestions;
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn(`[dsh-quick-replies] Failed to generate suggestions for ${sessionId}:`, error?.message || error);
+          this.cache.set(sessionId, []);
+          this.notify(sessionId, []);
+        }
+        return [];
+      } finally {
+        if (this.controllers.get(sessionId) === controller) {
+          this.controllers.delete(sessionId);
+        }
+        if (this.inFlight.get(sessionId) === task) {
+          this.inFlight.delete(sessionId);
         }
       }
+    })();
 
-      if (controller.signal.aborted) {
-        return [];
-      }
-
-      const suggestions = parseSummarizerResponse(fullText);
-      this.cache.set(sessionId, suggestions);
-      this.notify(sessionId, suggestions);
-      return suggestions;
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        console.warn(`[dsh-quick-replies] Failed to generate suggestions for ${sessionId}:`, error?.message || error);
-        this.cache.set(sessionId, []);
-        this.notify(sessionId, []);
-      }
-      return [];
-    } finally {
-      if (this.controllers.get(sessionId) === controller) {
-        this.controllers.delete(sessionId);
-      }
-    }
+    this.inFlight.set(sessionId, task);
+    return task;
   }
 }

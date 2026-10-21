@@ -75,30 +75,20 @@ describe('Client Shortcut Guard & Utilities', () => {
       ]);
     });
 
-    test('returns empty array when text is empty', () => {
+    test('returns empty array when text has no explicit options or questions', () => {
       assert.deepEqual(extractFallbackSuggestions(''), []);
       assert.deepEqual(extractFallbackSuggestions(null), []);
+      assert.deepEqual(extractFallbackSuggestions('Identifiquei o problema e corrigi o bug. Por favor teste novamente.'), []);
     });
 
-    test('extracts contextual options for troubleshooting and fixes', () => {
-      const text = 'Identifiquei o problema e corrigi o bug. Por favor teste novamente.';
-      assert.deepEqual(extractFallbackSuggestions(text), [
-        'Testei e funcionou!',
-        'Ainda não funcionou'
-      ]);
-    });
-
-    test('ignores markdown headings and section numbers and falls back to context', () => {
+    test('ignores markdown headings and section numbers', () => {
       const text = `O plugin está ativo!
 ### 1. Como ele aparece na tela
 Explicação da tela.
 ### 2. Formas de Uso e Interação
 #### Opção A: Pelo Teclado
-Sem tirar as mãos do teclado. Por favor reinicie e teste.`;
-      assert.deepEqual(extractFallbackSuggestions(text), [
-        'Testei e funcionou!',
-        'Ainda não funcionou'
-      ]);
+Sem tirar as mãos do teclado.`;
+      assert.deepEqual(extractFallbackSuggestions(text), []);
     });
   });
 

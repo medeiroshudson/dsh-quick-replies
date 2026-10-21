@@ -134,6 +134,40 @@ describe('HostQuickReplyService', () => {
     assert.equal(triggeredSessionId, 'session-empty-cache');
   });
 
+  test('handleHttpRequest awaits in-flight generation when cache is initially empty', async () => {
+    let statusCode;
+    let responseBody = '';
+    const delayedLlm = {
+      async *stream() {
+        await new Promise(r => setTimeout(r, 60));
+        yield { type: 'text-delta', text: '{"suggestions": ["Opção Aguardada"]}' };
+      }
+    };
+
+    const s = new HostQuickReplyService({ llm: delayedLlm, agentDefaultModel: mockDefaultModel });
+    s.setOnDemandTrigger((id) => {
+      s.generateSuggestions(id, [{ role: 'assistant', content: 'Pronto' }], {
+        provider: 'test',
+        model: 'test-model'
+      });
+    });
+
+    const req = {
+      url: '/api/quick-replies?sessionId=session-inflight',
+      method: 'GET'
+    };
+    const res = {
+      writeHead(code) { statusCode = code; },
+      end(data) { responseBody = data; }
+    };
+
+    await s.handleHttpRequest(req, res);
+
+    assert.equal(statusCode, 200);
+    const parsed = JSON.parse(responseBody);
+    assert.deepEqual(parsed.suggestions, ['Opção Aguardada']);
+  });
+
   test('clears suggestions when session starts new turn', async () => {
     service.setSuggestions('session-1', ['Opção 1']);
     assert.equal(service.getSuggestions('session-1').length, 1);
