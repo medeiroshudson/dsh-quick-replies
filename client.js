@@ -327,12 +327,21 @@ window.__ModuleLoader__.load({
           boxSizing: 'border-box',
           width: '100%',
           maxWidth: 'var(--dsh-composer-card-max-width, 840px)',
-          margin: '0 auto 6px auto',
-          padding: '0',
+          margin: '12px auto 8px auto',
+          padding: '8px 12px 10px 12px',
+          background: 'var(--dsw-specific-menu, rgba(20, 23, 29, 0.85))',
+          backdropFilter: 'var(--dsw-menu-backdrop-filter, blur(16px))',
+          WebkitBackdropFilter: 'var(--dsw-menu-backdrop-filter, blur(16px))',
+          boxShadow: 'var(--dsw-elevation-panel, 0 4px 16px rgba(0, 0, 0, 0.2))',
+          border: '1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08))',
+          borderRadius: 'var(--dsw-radius-lg, 12px)',
           display: 'flex',
           flexDirection: 'column',
-          gap: '6px',
-          fontFamily: 'inherit'
+          gap: '8px',
+          fontFamily: 'inherit',
+          position: 'relative',
+          zIndex: 2,
+          overflow: 'hidden'
         }
       }, [
         // Header row
