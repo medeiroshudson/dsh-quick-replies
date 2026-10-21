@@ -10,6 +10,9 @@ describe('HostQuickReplyService', () => {
   beforeEach(() => {
     mockLlm = {
       async *stream(options) {
+        if (!Array.isArray(options.messages?.[0]?.content)) {
+          throw new TypeError('options.messages[0].content must be an array of blocks');
+        }
         if (options.signal?.aborted) {
           throw new Error('Aborted');
         }

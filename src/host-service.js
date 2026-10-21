@@ -205,7 +205,10 @@ export class HostQuickReplyService {
           provider,
           model: model || 'default',
           system,
-          messages: [{ role: 'user', content: userPrompt }],
+          messages: [{
+            role: 'user',
+            content: [{ type: 'text', text: userPrompt }]
+          }],
           maxTokens: 512,
           reasoningEffort: 'low',
           temperature: 0.3,
