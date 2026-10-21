@@ -35,6 +35,12 @@ Retorne APENAS um JSON válido no formato:
 const MAX_ASSISTANT_BUDGET = 2000;
 const MAX_USER_BUDGET = 500;
 
+function hasRealText(content) {
+  if (typeof content === 'string') return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+  return content.some(b => b && (b.type === 'text' || b.kind === 'text') && typeof b.text === 'string' && b.text.trim().length > 0);
+}
+
 /**
  * Extract clean string text from message content with length bounds.
  * @param {string | Array<object>} content
@@ -54,9 +60,9 @@ function extractTextAndTools(content, maxBudget = MAX_ASSISTANT_BUDGET) {
 
   for (const block of content) {
     if (!block) continue;
-    if (block.type === 'text' && typeof block.text === 'string') {
+    if ((block.type === 'text' || block.kind === 'text') && typeof block.text === 'string') {
       texts.push(block.text);
-    } else if (block.type === 'tool-call' && block.name) {
+    } else if ((block.type === 'tool-call' || block.kind === 'tool-call') && block.name) {
       tools.push(block.name);
     }
   }
@@ -85,7 +91,7 @@ export function buildSummarizerPrompt(messages = []) {
     };
   }
 
-  // Find the last assistant message
+  // Find the last assistant message that actually communicated to the user
   let lastAssistant = null;
   let lastUser = null;
 
@@ -93,6 +99,7 @@ export function buildSummarizerPrompt(messages = []) {
     const msg = messages[i];
     if (!msg) continue;
     if (!lastAssistant && msg.role === 'assistant') {
+      if (!hasRealText(msg.content)) continue;
       const text = extractTextAndTools(msg.content, MAX_ASSISTANT_BUDGET);
       if (text) {
         lastAssistant = msg;
@@ -102,6 +109,7 @@ export function buildSummarizerPrompt(messages = []) {
       if (msg.source && msg.source.kind && msg.source.kind !== 'user') {
         continue;
       }
+      if (!hasRealText(msg.content)) continue;
       const text = extractTextAndTools(msg.content, MAX_USER_BUDGET);
       if (
         text &&

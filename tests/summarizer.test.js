@@ -109,5 +109,16 @@ describe('Summarizer Context Sanitizer & Parser', () => {
       assert.ok(!userPrompt.includes('Time sampled'));
       assert.ok(!userPrompt.includes('model changed'));
     });
+
+    test('skips intermediate tool-only assistant messages and finds the last assistant message with real text', () => {
+      const messages = [
+        { role: 'user', content: 'Execute o comando', source: { kind: 'user' } },
+        { role: 'assistant', content: 'Aqui está a explicação e opções finais para você escolher' },
+        { role: 'assistant', content: [{ type: 'tool-call', name: 'bash', arguments: '{}' }] },
+        { role: 'assistant', content: [{ type: 'tool-call', name: 'read', arguments: '{}' }] }
+      ];
+      const { userPrompt } = buildSummarizerPrompt(messages);
+      assert.ok(userPrompt.includes('Aqui está a explicação e opções finais'));
+    });
   });
 });
