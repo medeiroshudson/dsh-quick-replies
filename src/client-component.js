@@ -64,7 +64,7 @@ export function extractFallbackSuggestions(text) {
 
   if (candidates.length >= 2) return candidates;
 
-  // Question patterns strictly at the end of the response (must end with ?)
+  // 2. Question or testing patterns strictly at the end of the response
   const tail = lines.slice(-2).join(' ');
   if (/\?/.test(tail)) {
     if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
@@ -76,6 +76,11 @@ export function extractFallbackSuggestions(text) {
     if (/funciona|testar|deu certo/i.test(tail)) {
       return ['Sim, funcionou!', 'Ainda não funcionou'];
     }
+  }
+
+  // 3. Testing instructions at the end
+  if (/teste agora|como testar|testar no|testando/i.test(tail)) {
+    return ['Testei e funcionou!', 'Ainda não funcionou'];
   }
 
   return [];

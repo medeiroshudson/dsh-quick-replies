@@ -128,10 +128,15 @@ export class HostQuickReplyService {
       const sessionId = url.searchParams.get('sessionId') || '';
       let suggestions = this.getSuggestions(sessionId);
 
-      if (suggestions.length === 0 && sessionId && typeof this.onDemandTrigger === 'function' && !this.inFlight.has(sessionId)) {
-        try {
-          this.onDemandTrigger(sessionId);
-        } catch (_) {}
+      if (suggestions.length === 0 && sessionId && typeof this.onDemandTrigger === 'function') {
+        if (!this.inFlight.has(sessionId)) {
+          try {
+            const p = this.onDemandTrigger(sessionId);
+            if (p && typeof p.then === 'function') {
+              this.inFlight.set(sessionId, p);
+            }
+          } catch (_) {}
+        }
       }
 
       // If generation is in flight, await it up to 2500ms

@@ -27,7 +27,7 @@ export function apply(ctx, config) {
   if (webServer && typeof webServer.register === 'function') {
     ctx.effect(() => {
       service.setOnDemandTrigger((id) => {
-        triggerForSession(id);
+        return triggerForSession(id);
       });
       return webServer.register({
         kind: 'exact',
@@ -78,10 +78,11 @@ export function apply(ctx, config) {
         } catch (_) {}
       }
 
-      // Trigger background generation (non-blocking)
-      service.generateSuggestions(sessionId, messages, llmConfig).catch(() => {});
+      // Trigger background generation
+      return await service.generateSuggestions(sessionId, messages, llmConfig);
     } catch (err) {
       console.warn(`[dsh-quick-replies] Error inspecting session ${sessionId}:`, err?.message || err);
+      return [];
     }
   }
 

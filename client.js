@@ -99,22 +99,27 @@ window.__ModuleLoader__.load({
 
       if (candidates.length >= 2) return candidates;
 
-  // Question patterns strictly at the end of the response (must end with ?)
-  const tail = lines.slice(-2).join(' ');
-  if (/\?/.test(tail)) {
-    if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
-      return ['Sim, pode prosseguir', 'Não agora'];
-    }
-    if (/como deseja|como gostaria|como prefere|qual prefere/i.test(tail)) {
-      return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
-    }
-    if (/funciona|testar|deu certo/i.test(tail)) {
-      return ['Sim, funcionou!', 'Ainda não funcionou'];
-    }
-  }
+      // 2. Question or testing patterns strictly at the end of the response
+      const tail = lines.slice(-2).join(' ');
+      if (/\?/.test(tail)) {
+        if (/deseja que eu|quer que eu|posso avançar|podemos|deseja/i.test(tail)) {
+          return ['Sim, pode prosseguir', 'Não agora'];
+        }
+        if (/como deseja|como gostaria|como prefere|qual prefere/i.test(tail)) {
+          return ['Prosseguir com o próximo passo', 'Detalhar mais informações'];
+        }
+        if (/funciona|testar|deu certo/i.test(tail)) {
+          return ['Sim, funcionou!', 'Ainda não funcionou'];
+        }
+      }
 
-  return [];
-}
+      // 3. Testing instructions at the end
+      if (/teste agora|como testar|testar no|testando/i.test(tail)) {
+        return ['Testei e funcionou!', 'Ainda não funcionou'];
+      }
+
+      return [];
+    }
 
     /**
      * Quick Replies Component in conversation.input.dock

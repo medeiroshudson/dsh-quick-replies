@@ -78,7 +78,15 @@ describe('Client Shortcut Guard & Utilities', () => {
     test('returns empty array when text has no explicit options or questions', () => {
       assert.deepEqual(extractFallbackSuggestions(''), []);
       assert.deepEqual(extractFallbackSuggestions(null), []);
-      assert.deepEqual(extractFallbackSuggestions('Identifiquei o problema e corrigi o bug. Por favor teste novamente.'), []);
+      assert.deepEqual(extractFallbackSuggestions('Esta é uma resposta puramente informativa.'), []);
+    });
+
+    test('extracts testing choices when ending with test instructions', () => {
+      const text = 'Correções aplicadas com sucesso.\nComo testar: teste agora no seu DSH!';
+      assert.deepEqual(extractFallbackSuggestions(text), [
+        'Testei e funcionou!',
+        'Ainda não funcionou'
+      ]);
     });
 
     test('ignores markdown headings and section numbers', () => {
